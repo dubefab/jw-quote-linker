@@ -911,7 +911,10 @@ class JWLLinkerPlugin extends Plugin {
       else if (el.closest('.boxSupplement')) kind = 'box';
       let md = this._elementToMarkdown(el);
       if (!md) continue;
-      if (kind === 'heading' || kind === 'title') md = `### ${md}`;
+      if (kind === 'heading' || kind === 'title') {
+        // a wrapper such as div.boxTtl > h2 already converts to '## **text**': keep the text only
+        md = `### ${md.replace(/^#+\s*/, '').replace(/^\*\*(.+)\*\*$/, '$1')}`;
+      }
       paragraphs.push({ pid, page, kind, md });
     }
     return { docId, title: heading || pageTitle, pubNav, paragraphs };
