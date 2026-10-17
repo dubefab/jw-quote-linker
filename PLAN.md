@@ -58,7 +58,7 @@ In `main.js`:
 
 ## Phase 2: article model + paragraph picker (the main feature)
 
-Status: [ ] not done
+Status: [ ] code written and deployed 2026-10-17, in-vault verification (steps 1-8) not run yet. Deviations: parsed articles cached in memory per session, not in history; lookup keeps the old one-block output when the hit is not an article; preselected ranges drop headings and questions; punctuation-spacing cleanup not applied to markdown (it would break link URLs).
 
 New helper `_parseArticle(dom, baseUrl)` returns:
 ```

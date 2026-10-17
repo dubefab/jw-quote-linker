@@ -6,6 +6,8 @@ const {
   Notice,
   MarkdownRenderChild,
   MarkdownRenderer,
+  Modal,
+  htmlToMarkdown,
   requestUrl,
   PluginSettingTab,
   Setting,
@@ -102,6 +104,7 @@ const Cmd = {
   citeParagraphCallout: 'citeParagraphCallout',
   openSelectedinWOL: 'openSelectedInWOL',
   citePublicationLookup: 'citePublicationLookup',
+  citeFromPublication: 'citeFromPublication',
   addLinkTitle: 'addLinkTitle',
   convertScriptureToJWLibrary: 'convertScriptureToJWLibrary',
   convertWebToJWLibrary: 'convertWebToJWLibrary',
@@ -119,6 +122,10 @@ class JWLLinkerPlugin extends Plugin {
     /** @type {Menu} */
     this.menu = new Menu();
     this.menuClass = 'jwl-linker-plugin-menu-container';
+    /** @type {Map<string, TArticle>} parsed articles by docid, this session only */
+    this.articleCache = new Map();
+    /** @type {Notice|undefined} */
+    this.loadingNotice = undefined;
   }
 
   async onload() {
@@ -287,30 +294,45 @@ class JWLLinkerPlugin extends Plugin {
    * @param {number} [pars="0"] *Number of paragraphs to cite (Use 0 for link only)
    */
   async insertCitation(editor, command, pars = 0) {
-    /** @type {Notice} */
-    let loadingNotice;
     const activeEditor = this.confirmEditor(editor);
     if (!activeEditor) return;
     let { selection, caret, line } = this._getEditorSelection(activeEditor);
     if (selection) {
       selection = selection.trim();
-      loadingNotice = new Notice(`${Lang.loadingCitation} ${selection}`); // remain open until we complete
+      const loadingNotice = new Notice(`${Lang.loadingCitation} ${selection}`); // remain open until we complete
+      this.loadingNotice = loadingNotice;
       const view = await this.getView();
+      const finish = (promise) =>
+        promise
+          .then((output) => {
+            // null = cancelled or failed (the reason was already shown), leave the editor alone
+            if (output !== null && output !== undefined) replaceEditorSelection(output);
+          })
+          .catch((error) => {
+            //// biome-ignore lint/suspicious/noConsoleLog: ⚠️
+            console.log(error);
+            new Notice(`${Lang.onlineLookupFailed} ${selection}`, Config.delay);
+          })
+          .finally(() => loadingNotice.hide());
       switch (command) {
         case Cmd.citeVerse:
         case Cmd.citeVerseCallout:
           // Convert Scripture reference into bible verse citation (+ JW Library MD URL*)
-          this._fetchBibleCitation(selection, view, caret, command).then(replaceEditorSelection);
+          finish(this._fetchBibleCitation(selection, view, caret, command));
           break;
         case Cmd.citeParagraph:
         case Cmd.citeParagraphCallout:
         case Cmd.addLinkTitle:
           // Convert JW.Org Finder-type URL to a paragraph citation (+ JW Library MD URL*)
-          this._fetchParagraphCitation(selection, view, caret, command, pars).then(replaceEditorSelection);
+          finish(this._fetchParagraphCitation(selection, view, caret, command, pars));
           break;
         case Cmd.citePublicationLookup:
           // Convert Publication lookup into a article citation
-          this._fetchLookupCitation(selection, view).then(replaceEditorSelection);
+          finish(this._fetchLookupCitation(selection, view));
+          break;
+        case Cmd.citeFromPublication:
+          // Pick paragraphs from a jw.org/wol link or a publication lookup
+          finish(this._citeFromPublication(selection, view, caret));
           break;
       }
     } else {
@@ -323,7 +345,6 @@ class JWLLinkerPlugin extends Plugin {
       // try to select the original reference, first line (helps user delete it quickly if needed)
       const last = activeEditor.getLine(line).length;
       activeEditor.setSelection({ line: line, ch: 0 }, { line: line, ch: last });
-      loadingNotice.hide();
     }
   }
 
@@ -484,6 +505,12 @@ class JWLLinkerPlugin extends Plugin {
       text: 'Cite publication lookup',
       icon: 'reading-glasses',
       fn: (editor) => this.insertCitation(editor, Cmd.citePublicationLookup),
+    },
+    {
+      id: Cmd.citeFromPublication,
+      text: 'Cite from publication…',
+      icon: 'list-checks',
+      fn: (editor) => this.insertCitation(editor, Cmd.citeFromPublication),
     },
     {
       id: Cmd.openSelectedinWOL,
@@ -710,6 +737,10 @@ class JWLLinkerPlugin extends Plugin {
     if (!match || !URL.canParse(match.url)) {
       return `${input} | ${Lang[OutputError.invalidUrl]}`;
     }
+    // No paragraph in the link: let the user pick from the article
+    if (!match.parId && command !== Cmd.addLinkTitle) {
+      return this._pickCitation(input, view, match.docId, [], command === Cmd.citeParagraphCallout);
+    }
     let link = '';
     let content = [];
     const cache = view.getFromHistory(match.url, pars);
@@ -776,40 +807,60 @@ class JWLLinkerPlugin extends Plugin {
   async _fetchLookupCitation(input, view) {
     // Convert WT pub lookup into WT search url syntax
     const lookupUrl = Config.wolLookup + encodeURIComponent(input).replace(/%20/g, '+');
-    let link = '';
-    let content = [];
-    let text = '';
-    const cache = view.getFromHistory(lookupUrl); // try the cache first
-    if (cache) {
-      link = cache.link;
-      content = cache.content;
-    } else {
-      const dom = await this._fetchDOM(lookupUrl);
-      if (dom) {
-        const query = this._getElementAsText(dom, '.searchText', TargetType.jwonline);
-        const display = this._getElementAsText(dom, '.cardLine1', TargetType.jwonline);
-        link = `[${query} | ${display}](${lookupUrl})`; // (hard coded formatting)
-        text = this._getElementAsText(dom, '.resultItems', TargetType.jwonline);
-        content.push(text);
-      }
+    const dom = await this._fetchDOM(lookupUrl);
+    if (!dom) {
+      new Notice(`${Lang.onlineLookupFailed} ${lookupUrl}`, Config.delay);
+      return null;
     }
-    if (link) {
-      view.addToHistory(lookupUrl, link, content);
-      view.showHistory();
-      text = content.join('');
-      text = this._boldInitialNumber(text);
-      const template = this.settings.pubCalloutTemplate;
-      // Check if template is actually a callout (user editable):
-      // If so all lines need to be part of the callout syntax
-      if (template[0] === '>') {
-        text = text.replace(/^./gm, '>$&').substring(1);
-      }
-      const citation = template.replace('{title}', link).replace('{text}', text);
-      // Insert the citation below the lookup query (hard coded formatting)
-      const output = `${input}\n${citation}`;
-      return output;
+    // The hit links to /d/r1/lp-e/<docid>#h=<first>:0-<last>:0, so use the article picker
+    const href = dom.querySelector('.results a[href*="/wol/d/"]')?.getAttribute('href');
+    if (href) {
+      const [path, hash = ''] = href.split('#h=');
+      const docId = path.split('/').pop();
+      const pids = this._pidRange(hash);
+      return this._pickCitation(input, view, docId, pids, true, pids.length > 1);
     }
-    return Lang[OutputError.onlineLookupFailed];
+    // Not an article hit (e.g. a book reference): keep the one-block text
+    const query = this._getElementAsText(dom, '.searchText', TargetType.jwonline);
+    const display = this._getElementAsText(dom, '.cardLine1', TargetType.jwonline);
+    const link = `[${query} | ${display}](${lookupUrl})`; // (hard coded formatting)
+    const content = [this._getElementAsText(dom, '.resultItems', TargetType.jwonline)];
+    if (!content[0]) {
+      new Notice(`${Lang.onlineLookupFailed} ${lookupUrl}`, Config.delay);
+      return null;
+    }
+    view.addToHistory(lookupUrl, link, content);
+    view.showHistory();
+    const template = this.settings.pubCalloutTemplate;
+    let text = this._boldInitialNumber(content.join(''));
+    // Check if template is actually a callout (user editable):
+    // If so all lines need to be part of the callout syntax
+    if (template[0] === '>') {
+      text = text.replace(/^./gm, '>$&').substring(1);
+    }
+    const citation = template.replace('{title}', link).replace('{text}', text);
+    // Insert the citation below the lookup query (hard coded formatting)
+    return `${input}\n${citation}`;
+  }
+
+  /**
+   * Cite from publication: a jw.org/wol link opens the picker (its paragraph preselected),
+   * anything else is treated as a publication lookup
+   * @param {string} input selection
+   * @param {View} view
+   * @param {number} caret
+   * @returns {Promise<string|null>} null = cancelled or failed
+   */
+  async _citeFromPublication(input, view, caret) {
+    if (/jw\.org/i.test(input)) {
+      const match = this._getLinkAtCaret(input, caret);
+      if (!match) {
+        new Notice(`${Lang.invalidUrl} ${input}`, Config.delay);
+        return null;
+      }
+      return this._pickCitation(input, view, match.docId, this._pidRange(match.parId), true);
+    }
+    return this._fetchLookupCitation(input, view);
   }
 
   /**
@@ -828,6 +879,139 @@ class JWLLinkerPlugin extends Plugin {
       console.log(error);
     }
     return null;
+  }
+
+  /**
+   * Paragraph ids from a finder par= or a wol #h= value: '4' -> [4], '1:0-9:0' -> [1..9]
+   * @param {string} parId
+   * @returns {Array<number>}
+   */
+  _pidRange(parId) {
+    const m = /^(\d+)(?::\d+)?(?:-(\d+))?/.exec(parId ?? '');
+    if (!m) return [];
+    const first = Number(m[1]);
+    const last = m[2] ? Number(m[2]) : first;
+    const pids = [];
+    for (let pid = first; pid <= last && pids.length < 500; pid++) pids.push(pid);
+    return pids;
+  }
+
+  /**
+   * Fetch and parse a wol article, cached for the session
+   * @param {string} docId
+   * @returns {Promise<TArticle|null>}
+   */
+  async _getArticle(docId) {
+    if (this.articleCache.has(docId)) return this.articleCache.get(docId);
+    const dom = await this._fetchDOM(Config.wolPublications + docId);
+    if (!dom) return null;
+    const article = this._parseArticle(dom, docId);
+    if (article.paragraphs.length === 0) return null;
+    this.articleCache.set(docId, article);
+    return article;
+  }
+
+  /**
+   * Break a wol article page into paragraphs, each with markdown text and its printed page
+   * @param {Document} dom
+   * @param {string} docId
+   * @returns {TArticle}
+   */
+  _parseArticle(dom, docId) {
+    const heading = dom.querySelector('h1[data-pid]')?.textContent.trim();
+    const pageTitle = this._getElementAsText(dom, 'title', TargetType.jwonline).split(/\s+[—–]\s+/)[0];
+    const pubNav = this._getElementAsText(dom, '#publicationNavigation', TargetType.pubNav);
+    const nodes = Array.from(dom.querySelectorAll('[data-pid], .pageNum'));
+    // paragraphs before the first marker belong to the first printed page
+    let page = nodes.find((el) => el.classList.contains('pageNum'))?.getAttribute('data-no') ?? '';
+    const paragraphs = [];
+    for (const el of nodes) {
+      if (el.classList.contains('pageNum')) {
+        page = el.getAttribute('data-no') ?? page;
+        continue;
+      }
+      if (el.parentElement?.closest('[data-pid]')) continue; // only the outermost element
+      const pid = Number(el.getAttribute('data-pid'));
+      const level = /^H([1-6])$/.exec(el.tagName)?.[1];
+      let kind = 'body';
+      if (level || el.classList.contains('boxTtl')) kind = 'heading';
+      else if (el.classList.contains('qu')) kind = 'question';
+      else if (el.closest('.boxSupplement')) kind = 'box';
+      let md = this._elementToMarkdown(el);
+      if (!md) continue;
+      if (kind === 'heading') md = `### ${md}`;
+      paragraphs.push({ pid, page, kind, md });
+    }
+    return { docId, title: heading || pageTitle, pubNav, paragraphs };
+  }
+
+  /**
+   * Convert one paragraph element to markdown, keeping italics and links
+   * @param {Element} el
+   * @returns {string}
+   */
+  _elementToMarkdown(el) {
+    const clone = el.cloneNode(true);
+    for (const junk of clone.querySelectorAll('.pageNum, sup, a.fn, .footnote')) junk.remove();
+    for (const a of clone.querySelectorAll('a[href^="/"]')) {
+      a.setAttribute('href', `https://wol.jw.org${a.getAttribute('href')}`);
+    }
+    // annotation symbols, removed from text only so markdown stays intact
+    const walker = clone.ownerDocument.createTreeWalker(clone, 4); // 4 = SHOW_TEXT
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      node.textContent = node.textContent.replace(/[\+\*\#]/g, '');
+    }
+    return htmlToMarkdown(clone.innerHTML)
+      .replace(/[  ]/g, ' ') // WT use these after initial numbers
+      .replace(/ {2,}/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Open the picker for an article and build the citation from the ticked paragraphs
+   * @param {string} input selection, the citation goes below it
+   * @param {View} view
+   * @param {string} docId
+   * @param {Array<number>} preselect paragraph ids to tick
+   * @param {boolean} callout use the callout template
+   * @param {boolean} [bodyOnly] drop headings and questions from a preselected range
+   * @returns {Promise<string|null>} null = cancelled or failed (a Notice says why)
+   */
+  async _pickCitation(input, view, docId, preselect, callout, bodyOnly = false) {
+    const article = docId ? await this._getArticle(docId) : null;
+    if (!article) {
+      new Notice(`${Lang.onlineLookupFailed} ${Config.wolPublications}${docId}`, Config.delay);
+      return null;
+    }
+    const ticked = preselect.filter((pid) => {
+      const par = article.paragraphs.find((p) => p.pid === pid);
+      return par && (!bodyOnly || par.kind === 'body' || par.kind === 'box');
+    });
+    this.loadingNotice?.hide(); // the picker is the feedback now
+    const pids = await new Promise((resolve) => {
+      new ParagraphPickerModal(this.app, article, ticked, resolve).open();
+    });
+    if (!pids) return null;
+    const picked = article.paragraphs.filter((p) => pids.includes(p.pid));
+    const first = picked[0].pid;
+    const label = article.pubNav || article.title;
+    const target = this.settings.citationLink
+      ? `${Config.jwlFinder}docid=${docId}&par=${first}${Config.jwlLocale}`
+      : `${Config.wolPublications}${docId}#h=${first}`;
+    const link = `[${label}](${target})`;
+    const content = picked.map((p) => this._boldInitialNumber(p.md));
+    const template = callout ? this.settings.pubCalloutTemplate : this.settings.pubTemplate;
+    let text = content.join('\n\n');
+    if (template[0] === '>') {
+      // first line follows the template's own '> ', the rest need the prefix
+      text = text
+        .split('\n')
+        .map((line, i) => (i === 0 ? line : line === '' ? '>' : `> ${line}`))
+        .join('\n');
+    }
+    view.addToHistory(`${Config.wolPublications}${docId}#h=${first}`, link, content);
+    view.showHistory();
+    return `${input}\n${template.replace('{title}', link).replace('{text}', text)}`;
   }
 
   /**
@@ -1300,6 +1484,128 @@ class JWLLinkerPlugin extends Plugin {
       return `${words.slice(0, count).join(' ')} …`;
     }
     return sentence;
+  }
+}
+
+/**
+ * Pick paragraphs from a parsed article, grouped by printed page
+ * Resolves onDone with the ticked paragraph ids in article order, or null if cancelled
+ */
+class ParagraphPickerModal extends Modal {
+  /**
+   * @param {import('obsidian').App} app
+   * @param {TArticle} article
+   * @param {Array<number>} preselect
+   * @param {(pids: Array<number>|null) => void} onDone
+   */
+  constructor(app, article, preselect, onDone) {
+    super(app);
+    this.article = article;
+    this.ticked = new Set(preselect);
+    this.onDone = onDone;
+    this.finished = false;
+    /** @type {Array<{row: HTMLElement, box: HTMLInputElement, pid: number}>} */
+    this.rows = [];
+    this.focusIdx = 0;
+  }
+
+  onOpen() {
+    this.modalEl.addClass('jwl-picker');
+    this.titleEl.setText(this.article.title);
+    const renderParent = new MarkdownRenderChild(this.contentEl);
+    if (this.article.pubNav) {
+      this.contentEl.createDiv({ cls: 'jwl-picker-nav', text: this.article.pubNav });
+    }
+    const list = this.contentEl.createDiv({ cls: 'jwl-picker-list' });
+    let lastPage = null;
+    for (const par of this.article.paragraphs) {
+      if (par.page !== lastPage) {
+        list.createDiv({ cls: 'jwl-picker-page', text: par.page ? `Page ${par.page}` : 'Article' });
+        lastPage = par.page;
+      }
+      const row = list.createDiv({ cls: `jwl-picker-row jwl-picker-${par.kind}`, attr: { tabindex: '-1' } });
+      const box = row.createEl('input', { type: 'checkbox', attr: { tabindex: '-1' } });
+      box.checked = this.ticked.has(par.pid);
+      box.onchange = () => this.setTicked(par.pid, box.checked);
+      row.createSpan({ cls: 'jwl-picker-pid', text: String(par.pid) });
+      const textEl = row.createDiv({ cls: 'jwl-picker-text', text: this._preview(par.md) });
+      let expanded = false;
+      textEl.onclick = () => {
+        expanded = !expanded;
+        textEl.empty();
+        textEl.toggleClass('is-expanded', expanded);
+        if (expanded) MarkdownRenderer.render(this.app, par.md, textEl, '/', renderParent);
+        else textEl.setText(this._preview(par.md));
+      };
+      this.rows.push({ row, box, pid: par.pid });
+    }
+
+    const footer = this.contentEl.createDiv({ cls: 'modal-button-container' });
+    this.countEl = footer.createSpan({ cls: 'jwl-picker-count' });
+    footer.createEl('button', { text: 'Cancel' }).onclick = () => this.finish(null);
+    footer.createEl('button', { text: 'Insert', cls: 'mod-cta' }).onclick = () => this.insert();
+    this.updateCount();
+
+    this.scope.register([], 'ArrowDown', () => (this.moveFocus(1), false));
+    this.scope.register([], 'ArrowUp', () => (this.moveFocus(-1), false));
+    this.scope.register([], ' ', () => (this.toggleFocused(), false));
+    this.scope.register([], 'Enter', () => (this.insert(), false));
+
+    const firstTicked = this.rows.findIndex((r) => this.ticked.has(r.pid));
+    this.setFocus(Math.max(firstTicked, 0));
+  }
+
+  onClose() {
+    this.contentEl.empty();
+    if (!this.finished) this.onDone(null); // Esc or click outside
+  }
+
+  _preview(md) {
+    return md.split(/\s+/).length > 20 ? `${md.split(/\s+/).slice(0, 20).join(' ')} …` : md;
+  }
+
+  setTicked(pid, on) {
+    if (on) this.ticked.add(pid);
+    else this.ticked.delete(pid);
+    this.updateCount();
+  }
+
+  updateCount() {
+    this.countEl.setText(`${this.ticked.size} selected`);
+  }
+
+  setFocus(idx) {
+    if (this.rows.length === 0) return;
+    this.rows[this.focusIdx]?.row.removeClass('is-focused');
+    this.focusIdx = Math.min(Math.max(idx, 0), this.rows.length - 1);
+    const { row } = this.rows[this.focusIdx];
+    row.addClass('is-focused');
+    row.scrollIntoView({ block: 'nearest' });
+  }
+
+  moveFocus(step) {
+    this.setFocus(this.focusIdx + step);
+  }
+
+  toggleFocused() {
+    const item = this.rows[this.focusIdx];
+    if (!item) return;
+    item.box.checked = !item.box.checked;
+    this.setTicked(item.pid, item.box.checked);
+  }
+
+  insert() {
+    if (this.ticked.size === 0) {
+      new Notice('Tick at least one paragraph.', 2000);
+      return;
+    }
+    this.finish(this.article.paragraphs.map((p) => p.pid).filter((pid) => this.ticked.has(pid)));
+  }
+
+  finish(pids) {
+    this.finished = true;
+    this.close();
+    this.onDone(pids);
   }
 }
 
