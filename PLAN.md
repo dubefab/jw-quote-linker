@@ -50,7 +50,7 @@ Status: [x] done 2026-10-17 (fork dubefab/jw-quote-linker, clone ~/Developer/jw-
 
 ## Phase 1: link parsing fixes (small, isolated)
 
-Status: [ ] not done
+Status: [x] done 2026-10-17 (selector verified wrong: par=1 hit #p10; docid-first URL verified lost by old parser)
 
 In `main.js`:
 - `_extractLinkParts`: parse with `new URL(url).searchParams`. Accept `jw.org/finder` with or without `www`. Accept a finder link with `docid` and no `par` (return `parId: ''`, already allowed).

@@ -727,7 +727,11 @@ class JWLLinkerPlugin extends Plugin {
         // Title link only has no content
         if (command !== Cmd.addLinkTitle && match.parId) {
           for (let i = 0; i < pars; i++) {
-            let par = this._getElementAsText(dom, `#p${match.parId}${i}`, TargetType.jwonline);
+            // parId may be '4' (finder par=) or '1:0-9:0' (wol #h=); take the first number
+            const parNum = Number.parseInt(match.parId, 10);
+            let par = Number.isNaN(parNum)
+              ? ''
+              : this._getElementAsText(dom, `#p${parNum + i}`, TargetType.jwonline);
             if (par.trim() === '') {
               par = Lang.emptyPara;
             }
@@ -1259,7 +1263,7 @@ class JWLLinkerPlugin extends Plugin {
         docId = id ?? '';
       }
     } else if (url.startsWith(Config.webFinder)) {
-      const params = new URLSearchParams(url);
+      const params = URL.canParse(url) ? new URL(url).searchParams : new URLSearchParams();
       docId = params.get('docid') ?? '';
       parId = params.get('par') ?? '';
       if (docId) {
