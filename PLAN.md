@@ -84,7 +84,7 @@ Wire it up:
 
 ## Phase 3: polish
 
-Status: [x] done 2026-10-17, released as v0.3.0 (BRAT check on iPhone still open). Extra setting: 'Replace the source when citing'. Also fixed: the publication template setting saved to the wrong key, the Clear history button called a missing view, and the invalid-scripture fallback referenced an undefined variable.
+Status: [x] done 2026-10-17, GitHub release 0.3.0 published for BRAT (tag matches manifest, no v). Not submitted to the Obsidian community directory, fab decided against it. BRAT check on iPhone still open. Extra setting: 'Replace the source when citing'. Also fixed: the publication template setting saved to the wrong key, the Clear history button called a missing view, and the invalid-scripture fallback referenced an undefined variable.
 
 - Settings: "Skip study questions by default" (on), "Include headings" (on).
 - Notice on failure names the URL that failed (current notices say only "lookup failed").
