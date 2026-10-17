@@ -1,16 +1,16 @@
-# JWL Linker Plugin for [Obsidian](https://obsidian.md)
+# JW Quote Linker Plugin for [Obsidian](https://obsidian.md)
 
-> Fork of [MrBertie/jwl-linker](https://github.com/MrBertie/jwl-linker) (GPL-3.0). Plugin id `jw-quote-linker`. See PLAN.md for the planned changes.
+> Fork of [MrBertie/jwl-linker](https://github.com/MrBertie/jwl-linker) (GPL-3.0), credit to MrBertie. Plugin id `jw-quote-linker`. The fork adds a paragraph picker for publication citations, see below.
 
 Display all scripture references as *JW Library* links In Reading View. Adds commands to convert scriptures references and JW.Org links to *JW Library* links. Adds commands to fetch verse, paragraph, and publication citations.
 
 # How to Install
 
-Download the [latest version](https://github.com/MrBertie/jwl-linker/archive/refs/heads/main.zip) from this link, and unzip it.  
-You see a folder called `jwl-linker-main`; rename this folder as `jwl-linker` and then add it into your `{Obsidian Vault}/.obsidian/plugins` folder.  
-Restart Obsidian and go to the *Community Plugins Settings* page to enable the plugin.
+With [BRAT](https://github.com/TfTHacker/obsidian42-brat): add the beta plugin `dubefab/jw-quote-linker`. This works on iPhone and iPad too.
 
-*Note: you can also click the `<>Code` button above and choose `Download.zip`*
+Manually: download `main.js`, `manifest.json` and `styles.css` from the latest [release](https://github.com/dubefab/jw-quote-linker/releases), put them in `{Obsidian Vault}/.obsidian/plugins/jw-quote-linker/`, restart Obsidian and enable the plugin in *Community Plugins*.
+
+The plugin id differs from the original `jwl-linker`, so both can be installed. Disable the original to avoid duplicate commands.
 
 # How to Use In Reading View
 
@@ -36,9 +36,10 @@ To access the commands:
 | -------------------------------------| ---- | ------------------------------ | ------------------------------------------------------------------------------------ | ------------- |
 | Cite verses                           | Edit | Scripture reference             | `[[ JW Library url \| scripture reference ]] < Verses in plain format >`                | Adds below     | 
 | Cite verses as callout                | Edit | Scripture reference             | `[[ JW Library url \| scripture reference ]]<br/>< Verses in callout format >`          | Adds below     | 
-| Cite jw.org url                       | Edit | wol.jw.org \| jw.org/finder url | `[[ original url \| article nav title ]]<br/>< Full citation in plain format >`         | Adds below     | 
-| Cite jw.org url as callout            | Edit | wol.jw.org \| jw.org/finder url | `[[ original url \| article nav title ]]<br/>< Full citation in callout format >`       | Adds below     | 
-| Cite publication lookup               | Edit | Publication reference           | `[[ JW Library url \| publication reference ]]<br/>< Full citation of lookup article >` | Adds below     | 
+| Cite jw.org url                       | Edit | wol.jw.org \| jw.org/finder url | `[[ JW Library url \| article nav title ]]<br/>< Picked paragraphs in plain format >`   | Replaces       | 
+| Cite jw.org url as callout            | Edit | wol.jw.org \| jw.org/finder url | `[[ JW Library url \| article nav title ]]<br/>< Picked paragraphs in callout format >` | Replaces       | 
+| Cite publication lookup               | Edit | Publication reference           | `[[ JW Library url \| article nav title ]]<br/>< Picked paragraphs in plain format >`   | Replaces       | 
+| Cite from publication…                | Edit | jw.org url \| pub. reference     | Opens the paragraph picker, then as above                                               | Replaces       | 
 | Lookup selected text on WOL           | Edit | All text \| pub. reference       | `Open WOL lookup using selected as search text`                                         | Opens          | 
 | Add title to jw.org url               | Edit | wol.jw.org \| jw.org/finder url | `[[ original url \| article nav title ]]`                                               | Replaces       | 
 | Convert scriptures to JW Library      | Edit | Scripture reference             | `[[ JW Library url \| scripture reference ]]`                                           | Replaces       | 
@@ -61,22 +62,38 @@ As above but uses callout formatting.
 
 ----
 
-## Cite jw.org url as callout 
+## Cite jw.org url
 
-This command fetches the paragraph content from an existing jw.org link and inserts it with plain formatting, together with the correct navigation title.
+Select a jw.org share link (the kind you get from *Share*) or a wol.jw.org link. The plugin reads the link even when another plugin has already turned it into `[Title](url)`. Select the whole link, or put the cursor on its line with nothing selected.
 
-Note: to create this kind of link in wol.jw.org first click on a paragraph (you will see faint underlining), then copy the page link.
+- A link that names a paragraph (`par=4`, or `#h=4`) inserts that paragraph straight away.
+- A link without a paragraph opens the **paragraph picker**.
+
+The citation replaces the link. Italics and scripture links in the article are kept. The title links to the first picked paragraph in *JW Library* (or on wol.jw.org if *Link cited scripture* is off).
+
+Note: to create a paragraph link in wol.jw.org first click on a paragraph (you will see faint underlining), then copy the page link.
 
 ## Cite jw.org url as callout
 
-As above, but uses callout formatting.
+As above, but uses the callout template.
 
 ----
 
 ## Cite publication lookup
 
-This command fetches the result of a standard WT publication reference, and inserts the resulting article below the original reference on the page.
-Select the publication reference including the pages and run the command.
+Select a publication reference such as `w26.12 30` and run the command. The plugin finds the article, and the picker opens with the paragraphs of that reference ticked. The citation uses the plain template, and replaces the reference. *Cite jw.org url as callout* on the same text uses the callout template.
+
+## Cite from publication…
+
+Accepts a jw.org or wol link, or a publication reference, and always opens the picker. Uses the plain template.
+
+## The paragraph picker
+
+Lists the article's paragraphs under the printed page they appear on.
+
+- Everything is ticked to start. Study questions, and song, date and focus lines, start unticked. Untick what you do not need.
+- Click a paragraph's text to expand it.
+- Keys: up and down move, space ticks, enter inserts, esc cancels and leaves your note unchanged.
 
 ## Lookup selected text on WOL
 
@@ -112,7 +129,10 @@ Click on a newly created link to open it directly in your installed *JW Library*
 
 # Plugin Settings
 
-The various templates and other parameters can be changed in the plugin settings.
+The various templates and other parameters can be changed in the plugin settings, including:
+
+- *Skip study questions by default* and *Include headings*: what the picker ticks to start.
+- *Replace the source when citing*: turn off to keep the link or reference above the citation.
 
 
 # Tips for using Commands

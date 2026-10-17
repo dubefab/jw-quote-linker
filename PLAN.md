@@ -84,7 +84,7 @@ Wire it up:
 
 ## Phase 3: polish
 
-Status: [ ] not done
+Status: [ ] code, settings and README done 2026-10-17, awaiting fab's check in the vault. Release (tag v0.3.0, push, GitHub release) waits for fab's go-ahead. Extra setting: 'Replace the source when citing'. Also fixed: the publication template setting saved to the wrong key, the Clear history button called a missing view, and the invalid-scripture fallback referenced an undefined variable.
 
 - Settings: "Skip study questions by default" (on), "Include headings" (on).
 - Notice on failure names the URL that failed (current notices say only "lookup failed").

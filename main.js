@@ -24,6 +24,9 @@ const DEFAULT_SETTINGS = {
   spaceAfterPunct: true,
   paraCount: 1,
   lang: 'English',
+  skipQuestions: true,
+  includeHeadings: true,
+  removeSource: true,
 };
 
 // Keep separate from OutputError to allow future i18n
@@ -324,15 +327,15 @@ class JWLLinkerPlugin extends Plugin {
         case Cmd.citeParagraphCallout:
         case Cmd.addLinkTitle:
           // Convert JW.Org Finder-type URL to a paragraph citation (+ JW Library MD URL*)
-          finish(this._fetchParagraphCitation(selection, view, caret, command, pars), command === Cmd.addLinkTitle);
+          finish(this._fetchParagraphCitation(selection, view, caret, command, pars), command === Cmd.addLinkTitle || !this.settings.removeSource);
           break;
         case Cmd.citePublicationLookup:
           // Convert Publication lookup into a article citation
-          finish(this._fetchLookupCitation(selection, view), command === Cmd.addLinkTitle);
+          finish(this._fetchLookupCitation(selection, view), command === Cmd.addLinkTitle || !this.settings.removeSource);
           break;
         case Cmd.citeFromPublication:
           // Pick paragraphs from a jw.org/wol link or a publication lookup
-          finish(this._citeFromPublication(selection, view, caret), command === Cmd.addLinkTitle);
+          finish(this._citeFromPublication(selection, view, caret), command === Cmd.addLinkTitle || !this.settings.removeSource);
           break;
       }
     } else {
@@ -693,7 +696,12 @@ class JWLLinkerPlugin extends Plugin {
             // reuse the previous dom if the chapter is the same
             if (passage.chapter !== prevChapter) {
               dom = await this._fetchDOM(passage.link.jworg);
-              prevChapter = passage.chapter;
+              prevChapter = dom ? passage.chapter : ''; // retry the next passage if this fetch failed
+            }
+            if (!dom) {
+              new Notice(`${Lang.onlineLookupFailed} ${passage.link.jworg}`, Config.delay);
+              output.push(`${passage.displayFull} | ${Lang[OutputError.onlineLookupFailed]}`);
+              continue;
             }
             for (const id of passage.link.parIds) {
               const follows = verses.length > 0;
@@ -721,7 +729,7 @@ class JWLLinkerPlugin extends Plugin {
       }
       return output.join('\n');
     }
-    return `${passage.displayFull} | ${Lang[OutputError.invalidScripture]}`;
+    return `${input} | ${Lang[OutputError.invalidScripture]}`;
   }
 
   /**
@@ -809,8 +817,7 @@ class JWLLinkerPlugin extends Plugin {
       text = text.replace(/^./gm, '>$&').substring(1);
     }
     const citation = template.replace('{title}', link).replace('{text}', text);
-    // The citation replaces the lookup query
-    return citation;
+    return this._withCitation(input, input, citation);
   }
 
   /**
@@ -941,6 +948,18 @@ class JWLLinkerPlugin extends Plugin {
   }
 
   /**
+   * Put the citation in place of the source link or lookup, or below it when removeSource is off
+   * @param {string} input selection
+   * @param {string} source the part of the selection being cited
+   * @param {string} citation
+   * @returns {string}
+   */
+  _withCitation(input, source, citation) {
+    const replacement = this.settings.removeSource ? citation : `${source}\n${citation}`;
+    return input.replace(source, () => replacement);
+  }
+
+  /**
    * Open the picker for an article and build the citation from the ticked paragraphs
    * @param {string} input selection
    * @param {string} source the part of the selection the citation replaces
@@ -959,11 +978,18 @@ class JWLLinkerPlugin extends Plugin {
     }
     // no paragraph asked for: everything starts ticked, the user unticks what they don't need
     const wanted = preselect.length > 0 ? preselect : article.paragraphs.map((p) => p.pid);
-    // study questions and song/date/focus lines start unticked, unless one paragraph was asked for by name
+    // song/date/focus lines, and by setting study questions and headings, start unticked
+    // unless one paragraph was asked for by name
     const skip = ask && wanted.length > 1;
+    const { skipQuestions, includeHeadings } = this.settings;
     const ticked = wanted.filter((pid) => {
       const par = article.paragraphs.find((p) => p.pid === pid);
-      return par && !(skip && (par.kind === 'question' || par.kind === 'meta'));
+      if (!par) return false;
+      if (!skip) return true;
+      if (par.kind === 'meta') return false;
+      if (par.kind === 'question') return !skipQuestions;
+      if (par.kind === 'heading' || par.kind === 'title') return includeHeadings;
+      return true;
     });
     let pids = ticked;
     if (ask) {
@@ -1001,7 +1027,7 @@ class JWLLinkerPlugin extends Plugin {
     view.addToHistory(`${Config.wolPublications}${docId}#h=${first}`, link, content);
     view.showHistory();
     const citation = template.replace('{title}', link).replace('{text}', text);
-    return input.replace(source, () => citation); // the citation replaces the source link or lookup
+    return this._withCitation(input, source, citation);
   }
 
   /**
@@ -1814,7 +1840,7 @@ class JWLLinkerSettingTab extends PluginSettingTab {
           .setPlaceholder(defaultTemplate)
           .setValue(this.plugin.settings.pubTemplate)
           .onChange(async (value) => {
-            this.plugin.settings.lookupTemplate = value;
+            this.plugin.settings.pubTemplate = value;
             await this.plugin.saveSettings();
           });
       });
@@ -1865,6 +1891,36 @@ class JWLLinkerSettingTab extends PluginSettingTab {
         });
       });
 
+    new Setting(containerEl)
+      .setName('Skip study questions by default')
+      .setDesc('In the paragraph picker, leave study questions unticked.')
+      .addToggle((tog) => {
+        tog.setValue(this.plugin.settings.skipQuestions).onChange(async (value) => {
+          this.plugin.settings.skipQuestions = value;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Include headings')
+      .setDesc('In the paragraph picker, tick the article title and subheadings by default.')
+      .addToggle((tog) => {
+        tog.setValue(this.plugin.settings.includeHeadings).onChange(async (value) => {
+          this.plugin.settings.includeHeadings = value;
+          await this.plugin.saveSettings();
+        });
+      });
+
+    new Setting(containerEl)
+      .setName('Replace the source when citing')
+      .setDesc('Publication citations replace the selected link or lookup. Turn off to keep it above the citation.')
+      .addToggle((tog) => {
+        tog.setValue(this.plugin.settings.removeSource).onChange(async (value) => {
+          this.plugin.settings.removeSource = value;
+          await this.plugin.saveSettings();
+        });
+      });
+
     /* Reset section */
 
     new Setting(containerEl).setName('Reset').setDesc('This cannot be undone.').setHeading();
@@ -1887,7 +1943,7 @@ class JWLLinkerSettingTab extends PluginSettingTab {
       .addButton((btn) => {
         btn.setIcon('reset');
         btn.onClick(async () => {
-          this.plugin.view.clearHistory();
+          (await this.plugin.getView())?.clearHistory();
         });
       });
   }
