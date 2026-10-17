@@ -1,6 +1,6 @@
 # JWL Linker Plugin for [Obsidian](https://obsidian.md)
 
-> Fork of [MrBertie/jwl-linker](https://github.com/MrBertie/jwl-linker) (GPL-3.0). Plugin id `jwl-linker-fab`. See PLAN.md for the planned changes.
+> Fork of [MrBertie/jwl-linker](https://github.com/MrBertie/jwl-linker) (GPL-3.0). Plugin id `jw-quote-linker`. See PLAN.md for the planned changes.
 
 Display all scripture references as *JW Library* links In Reading View. Adds commands to convert scriptures references and JW.Org links to *JW Library* links. Adds commands to fetch verse, paragraph, and publication citations.
 

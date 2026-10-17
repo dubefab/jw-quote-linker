@@ -3,7 +3,7 @@
 # Usage: ./deploy.sh   (override target with VAULT_PLUGIN_DIR)
 set -u
 SRC="$(cd "$(dirname "$0")" && pwd)"
-DEST="${VAULT_PLUGIN_DIR:-/Users/fab/Library/Mobile Documents/iCloud~md~obsidian/Documents/fab/.obsidian/plugins/jwl-linker-fab}"
+DEST="${VAULT_PLUGIN_DIR:-/Users/fab/Library/Mobile Documents/iCloud~md~obsidian/Documents/fab/.obsidian/plugins/jw-quote-linker}"
 
 mkdir -p "$DEST" || { echo "cannot create $DEST"; exit 1; }
 for f in main.js manifest.json styles.css; do

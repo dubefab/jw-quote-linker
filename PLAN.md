@@ -37,16 +37,16 @@ Pick the last one. `htmlToMarkdown` ships in the `obsidian` module, so no depend
 
 ## Phase 0: fork and rename (one session)
 
-Status: [x] done 2026-10-17 (fork dubefab/jwl-linker, clone ~/Developer/jwl-linker, deployed; enable jwl-linker-fab in Obsidian by hand)
+Status: [x] done 2026-10-17 (fork dubefab/jw-quote-linker, clone ~/Developer/jw-quote-linker, deployed; enable jw-quote-linker in Obsidian by hand)
 
-1. `gh repo fork MrBertie/jwl-linker --clone=false` to get `dubefab/jwl-linker`.
-2. Clone it **outside iCloud** (git inside iCloud corrupts). Location: confirm with fab, default `~/Developer/jwl-linker`.
+1. `gh repo fork MrBertie/jwl-linker --clone=false` to get `dubefab/jw-quote-linker`.
+2. Clone it **outside iCloud** (git inside iCloud corrupts). Location: confirm with fab, default `~/Developer/jw-quote-linker`.
 3. Add `upstream` remote. Work on `main` of the fork (it is fab's repo).
-4. `manifest.json`: id `jwl-linker-fab`, name `JWL Linker (fab)`, version `0.3.0`, author keeps MrBertie and adds fab. Keep LICENSE (GPL-3) and a README line crediting upstream.
+4. `manifest.json`: id `jw-quote-linker`, name `JW Quote Linker`, version `0.3.0`, author keeps MrBertie and adds fab. Keep LICENSE (GPL-3) and a README line crediting upstream.
 5. Copy this plan into the repo as `PLAN.md` with checkboxes. That file becomes the hand-off between sessions.
-6. `deploy.sh` (bash 3.2, self-healing per CLAUDE.md): copies `main.js manifest.json styles.css` into `<vault>/.obsidian/plugins/jwl-linker-fab/`. Never touches the old `jwl-linker` folder.
+6. `deploy.sh` (bash 3.2, self-healing per CLAUDE.md): copies `main.js manifest.json styles.css` into `<vault>/.obsidian/plugins/jw-quote-linker/`. Never touches the old `jwl-linker` folder.
 7. Copy `data.json` settings into the new plugin folder on first deploy (only if absent).
-8. In Obsidian: disable the store `jwl-linker`, enable `jwl-linker-fab`. Do not delete the old folder (Safety rule). Later, BRAT can track `dubefab/jwl-linker` once there are GitHub releases.
+8. In Obsidian: disable the store `jwl-linker`, enable `jw-quote-linker`. Do not delete the old folder (Safety rule). Later, BRAT can track `dubefab/jw-quote-linker` once there are GitHub releases.
 
 ## Phase 1: link parsing fixes (small, isolated)
 
@@ -112,8 +112,8 @@ The state lives in the repo's `PLAN.md` checkboxes, not in this chat.
 - **Clear after Phase 2** if the session is long or the status line shows a cold count of 100k+.
 - Phase 1 and 2 can share a session. Phase 3 is small.
 
-To resume after `/clear`, open Claude Code in the clone (`cd ~/Developer/jwl-linker`) and say:
+To resume after `/clear`, open Claude Code in the clone (`cd ~/Developer/jw-quote-linker`) and say:
 
-> Continue the jwl-linker-fab plan. Read PLAN.md, do the next unchecked phase, run its verification steps, tick the boxes, and commit.
+> Continue the jw-quote-linker plan. Read PLAN.md, do the next unchecked phase, run its verification steps, tick the boxes, and commit.
 
 Per your standing orchestration rule, design work (Phase 2 article model and modal) stays on Opus, and mechanical work (deploy script, README, release) can go to `fast-worker` with a spec, only when you ask for subagents.
