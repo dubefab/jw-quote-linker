@@ -116,6 +116,7 @@ body.is-phone {
 .jwl-picker-text p { margin: 0; }
 .jwl-picker-title .jwl-picker-text,
 .jwl-picker-heading .jwl-picker-text { font-weight: var(--font-semibold); }
+.jwl-picker-meta .jwl-picker-text,
 .jwl-picker-question .jwl-picker-text { color: var(--text-muted); font-style: italic; }
 .jwl-picker .modal-button-container { align-items: center; }
 .jwl-picker-count { margin-right: auto; color: var(--text-muted); font-size: var(--font-ui-small); }

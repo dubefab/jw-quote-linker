@@ -901,12 +901,14 @@ class JWLLinkerPlugin extends Plugin {
         continue;
       }
       if (el.parentElement?.closest('[data-pid]')) continue; // only the outermost element
+      if (el.classList.contains('gen-field')) continue; // empty 'Your answer' form field
       const pid = Number(el.getAttribute('data-pid'));
       const level = /^H([1-6])$/.exec(el.tagName)?.[1];
       let kind = 'body';
       if (level === '1') kind = 'title';
       else if (level || el.classList.contains('boxTtl')) kind = 'heading';
       else if (el.classList.contains('qu')) kind = 'question';
+      else if (el.classList.contains('pubRefs') || el.classList.contains('contextTtl')) kind = 'meta'; // song, date, focus
       else if (el.closest('.boxSupplement')) kind = 'box';
       let md = this._elementToMarkdown(el);
       if (!md) continue;
@@ -923,7 +925,7 @@ class JWLLinkerPlugin extends Plugin {
    */
   _elementToMarkdown(el) {
     const clone = el.cloneNode(true);
-    for (const junk of clone.querySelectorAll('.pageNum, sup, a.fn, .footnote')) junk.remove();
+    for (const junk of clone.querySelectorAll('.pageNum, sup, a.fn, .footnote, textarea, label')) junk.remove();
     for (const a of clone.querySelectorAll('a[href^="/"]')) {
       a.setAttribute('href', `https://wol.jw.org${a.getAttribute('href')}`);
     }
@@ -957,11 +959,11 @@ class JWLLinkerPlugin extends Plugin {
     }
     // no paragraph asked for: everything starts ticked, the user unticks what they don't need
     const wanted = preselect.length > 0 ? preselect : article.paragraphs.map((p) => p.pid);
-    // study questions and the article title start unticked, unless one paragraph was asked for by name
+    // study questions and song/date/focus lines start unticked, unless one paragraph was asked for by name
     const skip = ask && wanted.length > 1;
     const ticked = wanted.filter((pid) => {
       const par = article.paragraphs.find((p) => p.pid === pid);
-      return par && !(skip && (par.kind === 'question' || par.kind === 'title'));
+      return par && !(skip && (par.kind === 'question' || par.kind === 'meta'));
     });
     let pids = ticked;
     if (ask) {

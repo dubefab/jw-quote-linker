@@ -58,7 +58,7 @@ In `main.js`:
 
 ## Phase 2: article model + paragraph picker (the main feature)
 
-Status: [ ] verified by fab in the vault 2026-10-17: steps 1-6 and the bad-link case of 7. Still open: 7 (airplane mode, Esc in the picker), 8 (light/dark), study-article question check. Deviations: parsed articles cached in memory per session, not in history; lookup keeps the old one-block output when the hit is not an article; the citation replaces the selected link or lookup instead of sitting below it; cite commands use the plain template, callout commands the callout one; picker starts with every paragraph ticked except study questions and the article title; links with par= build from the parsed article without the picker; punctuation-spacing cleanup not applied to markdown (it would break link URLs).
+Status: [ ] verified by fab in the vault 2026-10-17: steps 1-8 and a study article (docid 2026685). Open: re-check that article after the last fix (song/date/focus lines unticked, 'Your answer' fields gone, title ticked). Deviations: parsed articles cached in memory per session, not in history; lookup keeps the old one-block output when the hit is not an article; the citation replaces the selected link or lookup instead of sitting below it; cite commands use the plain template, callout commands the callout one; picker starts with every paragraph ticked except study questions and song/date/focus lines, and empty 'Your answer' fields are left out; links with par= build from the parsed article without the picker; punctuation-spacing cleanup not applied to markdown (it would break link URLs).
 
 New helper `_parseArticle(dom, baseUrl)` returns:
 ```
