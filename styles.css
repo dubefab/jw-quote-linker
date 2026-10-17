@@ -114,6 +114,7 @@ body.is-phone {
 .jwl-picker-pid { min-width: 2ch; color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .jwl-picker-text { flex: 1; cursor: pointer; }
 .jwl-picker-text p { margin: 0; }
+.jwl-picker-title .jwl-picker-text,
 .jwl-picker-heading .jwl-picker-text { font-weight: var(--font-semibold); }
 .jwl-picker-question .jwl-picker-text { color: var(--text-muted); font-style: italic; }
 .jwl-picker .modal-button-container { align-items: center; }

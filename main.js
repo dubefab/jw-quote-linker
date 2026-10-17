@@ -737,7 +737,7 @@ class JWLLinkerPlugin extends Plugin {
     const match = this._getLinkAtCaret(input, caret);
     // plain text such as 'w26.12 30' is a publication lookup, not a link
     if (!match && command !== Cmd.addLinkTitle && !/jw\.org|https?:/i.test(input)) {
-      return this._fetchLookupCitation(input, view);
+      return this._fetchLookupCitation(input, view, command === Cmd.citeParagraphCallout);
     }
     if (!match || !URL.canParse(match.url)) {
       new Notice(`${Lang.invalidUrl} ${input}`, Config.delay);
@@ -765,7 +765,7 @@ class JWLLinkerPlugin extends Plugin {
     // parId may be '4' (finder par=) or '1:0-9:0' (wol #h=): a range wins, else `pars` from the first
     const range = this._pidRange(match.parId);
     const pids = range.length > 1 ? range : Array.from({ length: pars }, (_, i) => range[0] + i);
-    return this._pickCitation(input, match.whole, view, match.docId, pids, callout, false, false);
+    return this._pickCitation(input, match.whole, view, match.docId, pids, callout, false);
   }
 
   /**
@@ -774,7 +774,7 @@ class JWLLinkerPlugin extends Plugin {
    * @param {View} view For history functions
    * @return {{string}, {boolean}, {OutputError}}
    */
-  async _fetchLookupCitation(input, view) {
+  async _fetchLookupCitation(input, view, callout = false) {
     // Convert WT pub lookup into WT search url syntax
     const lookupUrl = Config.wolLookup + encodeURIComponent(input).replace(/%20/g, '+');
     const dom = await this._fetchDOM(lookupUrl);
@@ -788,7 +788,7 @@ class JWLLinkerPlugin extends Plugin {
       const [path, hash = ''] = href.split('#h=');
       const docId = path.split('/').pop();
       const pids = this._pidRange(hash);
-      return this._pickCitation(input, input, view, docId, pids, true, pids.length > 1);
+      return this._pickCitation(input, input, view, docId, pids, callout);
     }
     // Not an article hit (e.g. a book reference): keep the one-block text
     const query = this._getElementAsText(dom, '.searchText', TargetType.jwonline);
@@ -801,7 +801,7 @@ class JWLLinkerPlugin extends Plugin {
     }
     view.addToHistory(lookupUrl, link, content);
     view.showHistory();
-    const template = this.settings.pubCalloutTemplate;
+    const template = callout ? this.settings.pubCalloutTemplate : this.settings.pubTemplate;
     let text = this._boldInitialNumber(content.join(''));
     // Check if template is actually a callout (user editable):
     // If so all lines need to be part of the callout syntax
@@ -828,7 +828,7 @@ class JWLLinkerPlugin extends Plugin {
         new Notice(`${Lang.invalidUrl} ${input}`, Config.delay);
         return null;
       }
-      return this._pickCitation(input, match.whole, view, match.docId, this._pidRange(match.parId), true);
+      return this._pickCitation(input, match.whole, view, match.docId, this._pidRange(match.parId), false);
     }
     return this._fetchLookupCitation(input, view);
   }
@@ -904,12 +904,13 @@ class JWLLinkerPlugin extends Plugin {
       const pid = Number(el.getAttribute('data-pid'));
       const level = /^H([1-6])$/.exec(el.tagName)?.[1];
       let kind = 'body';
-      if (level || el.classList.contains('boxTtl')) kind = 'heading';
+      if (level === '1') kind = 'title';
+      else if (level || el.classList.contains('boxTtl')) kind = 'heading';
       else if (el.classList.contains('qu')) kind = 'question';
       else if (el.closest('.boxSupplement')) kind = 'box';
       let md = this._elementToMarkdown(el);
       if (!md) continue;
-      if (kind === 'heading') md = `### ${md}`;
+      if (kind === 'heading' || kind === 'title') md = `### ${md}`;
       paragraphs.push({ pid, page, kind, md });
     }
     return { docId, title: heading || pageTitle, pubNav, paragraphs };
@@ -945,19 +946,22 @@ class JWLLinkerPlugin extends Plugin {
    * @param {string} docId
    * @param {Array<number>} preselect paragraph ids to tick
    * @param {boolean} callout use the callout template
-   * @param {boolean} [bodyOnly] drop headings and questions from a preselected range
    * @param {boolean} [ask] open the picker; false inserts the preselected paragraphs as they are
    * @returns {Promise<string|null>} null = cancelled or failed (a Notice says why)
    */
-  async _pickCitation(input, source, view, docId, preselect, callout, bodyOnly = false, ask = true) {
+  async _pickCitation(input, source, view, docId, preselect, callout, ask = true) {
     const article = docId ? await this._getArticle(docId) : null;
     if (!article) {
       new Notice(`${Lang.onlineLookupFailed} ${Config.wolPublications}${docId}`, Config.delay);
       return null;
     }
-    const ticked = preselect.filter((pid) => {
+    // no paragraph asked for: everything starts ticked, the user unticks what they don't need
+    const wanted = preselect.length > 0 ? preselect : article.paragraphs.map((p) => p.pid);
+    // study questions and the article title start unticked, unless one paragraph was asked for by name
+    const skip = ask && wanted.length > 1;
+    const ticked = wanted.filter((pid) => {
       const par = article.paragraphs.find((p) => p.pid === pid);
-      return par && (!bodyOnly || par.kind === 'body' || par.kind === 'box');
+      return par && !(skip && (par.kind === 'question' || par.kind === 'title'));
     });
     let pids = ticked;
     if (ask) {
