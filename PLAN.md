@@ -37,7 +37,7 @@ Pick the last one. `htmlToMarkdown` ships in the `obsidian` module, so no depend
 
 ## Phase 0: fork and rename (one session)
 
-Status: [ ] not done
+Status: [x] done 2026-10-17 (fork dubefab/jwl-linker, clone ~/Developer/jwl-linker, deployed; enable jwl-linker-fab in Obsidian by hand)
 
 1. `gh repo fork MrBertie/jwl-linker --clone=false` to get `dubefab/jwl-linker`.
 2. Clone it **outside iCloud** (git inside iCloud corrupts). Location: confirm with fab, default `~/Developer/jwl-linker`.
