@@ -189,12 +189,6 @@ class JWLLinkerPlugin extends Plugin {
     this.app.workspace.onLayoutReady(this.activateView.bind(this));
 
     this.addSettingTab(new JWLLinkerSettingTab(this.app, this));
-
-    // biome-ignore lint: ⚠️
-    console.log(
-      `%c${this.manifest.name} ${this.manifest.version} loaded`,
-      'background-color: purple; padding:4px; border-radius:4px',
-    );
   }
 
   onunload() { }
@@ -312,8 +306,7 @@ class JWLLinkerPlugin extends Plugin {
             if (output !== null && output !== undefined) replaceEditorSelection(output, reselect);
           })
           .catch((error) => {
-            //// biome-ignore lint/suspicious/noConsoleLog: ⚠️
-            console.log(error);
+                        console.error(error);
             new Notice(`${Lang.onlineLookupFailed} ${selection}`, Config.delay);
           })
           .finally(() => loadingNotice.hide());
@@ -852,8 +845,7 @@ class JWLLinkerPlugin extends Plugin {
         return new DOMParser().parseFromString(res.text, 'text/html');
       }
     } catch (error) {
-      //// biome-ignore lint/suspicious/noConsoleLog: ⚠️
-      console.log(error);
+            console.error(error);
     }
     return null;
   }
