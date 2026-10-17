@@ -302,11 +302,11 @@ class JWLLinkerPlugin extends Plugin {
       const loadingNotice = new Notice(`${Lang.loadingCitation} ${selection}`); // remain open until we complete
       this.loadingNotice = loadingNotice;
       const view = await this.getView();
-      const finish = (promise) =>
+      const finish = (promise, reselect = true) =>
         promise
           .then((output) => {
             // null = cancelled or failed (the reason was already shown), leave the editor alone
-            if (output !== null && output !== undefined) replaceEditorSelection(output);
+            if (output !== null && output !== undefined) replaceEditorSelection(output, reselect);
           })
           .catch((error) => {
             //// biome-ignore lint/suspicious/noConsoleLog: ⚠️
@@ -324,24 +324,25 @@ class JWLLinkerPlugin extends Plugin {
         case Cmd.citeParagraphCallout:
         case Cmd.addLinkTitle:
           // Convert JW.Org Finder-type URL to a paragraph citation (+ JW Library MD URL*)
-          finish(this._fetchParagraphCitation(selection, view, caret, command, pars));
+          finish(this._fetchParagraphCitation(selection, view, caret, command, pars), command === Cmd.addLinkTitle);
           break;
         case Cmd.citePublicationLookup:
           // Convert Publication lookup into a article citation
-          finish(this._fetchLookupCitation(selection, view));
+          finish(this._fetchLookupCitation(selection, view), command === Cmd.addLinkTitle);
           break;
         case Cmd.citeFromPublication:
           // Pick paragraphs from a jw.org/wol link or a publication lookup
-          finish(this._citeFromPublication(selection, view, caret));
+          finish(this._citeFromPublication(selection, view, caret), command === Cmd.addLinkTitle);
           break;
       }
     } else {
       new Notice(Lang.noSelection, Config.delay);
     }
 
-    function replaceEditorSelection(output) {
+    function replaceEditorSelection(output, reselect) {
       // Any errors will be part of the result
       activeEditor.replaceSelection(output);
+      if (!reselect) return; // the source reference is already replaced
       // try to select the original reference, first line (helps user delete it quickly if needed)
       const last = activeEditor.getLine(line).length;
       activeEditor.setSelection({ line: line, ch: 0 }, { line: line, ch: last });
@@ -734,68 +735,37 @@ class JWLLinkerPlugin extends Plugin {
    */
   async _fetchParagraphCitation(input, view, caret, command, pars) {
     const match = this._getLinkAtCaret(input, caret);
+    // plain text such as 'w26.12 30' is a publication lookup, not a link
+    if (!match && command !== Cmd.addLinkTitle && !/jw\.org|https?:/i.test(input)) {
+      return this._fetchLookupCitation(input, view);
+    }
     if (!match || !URL.canParse(match.url)) {
-      return `${input} | ${Lang[OutputError.invalidUrl]}`;
+      new Notice(`${Lang.invalidUrl} ${input}`, Config.delay);
+      return null;
     }
-    // No paragraph in the link: let the user pick from the article
-    if (!match.parId && command !== Cmd.addLinkTitle) {
-      return this._pickCitation(input, view, match.docId, [], command === Cmd.citeParagraphCallout);
-    }
-    let link = '';
-    let content = [];
-    const cache = view.getFromHistory(match.url, pars);
-    if (cache) {
-      link = cache.link;
-      content = cache.content;
-    } else {
+    if (command === Cmd.addLinkTitle) {
+      // title only: swap the raw url for a full MD link
       const dom = await this._fetchDOM(match.url);
-      if (dom) {
-        const pageTitle = this._getElementAsText(dom, 'title', TargetType.jwonline);
-        const pageNav = this._getElementAsText(dom, '#publicationNavigation', TargetType.pubNav);
-        const display = pageNav || pageTitle;
-        link = `[${display}](${match.url})`;
-        // Look for a wol/finder paragraph html #id
-        // Title link only has no content
-        if (command !== Cmd.addLinkTitle && match.parId) {
-          for (let i = 0; i < pars; i++) {
-            // parId may be '4' (finder par=) or '1:0-9:0' (wol #h=); take the first number
-            const parNum = Number.parseInt(match.parId, 10);
-            let par = Number.isNaN(parNum)
-              ? ''
-              : this._getElementAsText(dom, `#p${parNum + i}`, TargetType.jwonline);
-            if (par.trim() === '') {
-              par = Lang.emptyPara;
-            }
-            content.push(par);
-          }
-        }
+      if (!dom) {
+        new Notice(`${Lang.onlineLookupFailed} ${match.url}`, Config.delay);
+        return null;
       }
-    }
-    if (link) {
-      view.addToHistory(match.url, link, content);
+      const pageTitle = this._getElementAsText(dom, 'title', TargetType.jwonline);
+      const pageNav = this._getElementAsText(dom, '#publicationNavigation', TargetType.pubNav);
+      const link = `[${pageNav || pageTitle}](${match.url})`;
+      view.addToHistory(match.url, link, []);
       view.showHistory();
-      let output = '';
-      // replace the raw url to a full MD link
-      if (command === Cmd.addLinkTitle) {
-        output = input.replace(match.whole, link);
-      } else {
-        let template;
-        let text = '';
-        if (command === Cmd.citeParagraph) {
-          template = this.settings.pubTemplate;
-          text = content.join('');
-        } else if (command === Cmd.citeParagraphCallout) {
-          template = this.settings.pubCalloutTemplate;
-          const glue = template[0] === '>' ? '\n>\n>' : '\n';
-          text = content.join(glue);
-          text = this._boldInitialNumber(text);
-        }
-        const citation = template.replace('{title}', link).replace('{text}', text);
-        output = `${input}\n${citation}`;
-      }
-      return output;
+      return input.replace(match.whole, () => link);
     }
-    return `${input} | ${Lang[OutputError.onlineLookupFailed]}`;
+    const callout = command === Cmd.citeParagraphCallout;
+    // No paragraph in the link: let the user pick from the article
+    if (!match.parId) {
+      return this._pickCitation(input, match.whole, view, match.docId, [], callout);
+    }
+    // parId may be '4' (finder par=) or '1:0-9:0' (wol #h=): a range wins, else `pars` from the first
+    const range = this._pidRange(match.parId);
+    const pids = range.length > 1 ? range : Array.from({ length: pars }, (_, i) => range[0] + i);
+    return this._pickCitation(input, match.whole, view, match.docId, pids, callout, false, false);
   }
 
   /**
@@ -818,7 +788,7 @@ class JWLLinkerPlugin extends Plugin {
       const [path, hash = ''] = href.split('#h=');
       const docId = path.split('/').pop();
       const pids = this._pidRange(hash);
-      return this._pickCitation(input, view, docId, pids, true, pids.length > 1);
+      return this._pickCitation(input, input, view, docId, pids, true, pids.length > 1);
     }
     // Not an article hit (e.g. a book reference): keep the one-block text
     const query = this._getElementAsText(dom, '.searchText', TargetType.jwonline);
@@ -839,8 +809,8 @@ class JWLLinkerPlugin extends Plugin {
       text = text.replace(/^./gm, '>$&').substring(1);
     }
     const citation = template.replace('{title}', link).replace('{text}', text);
-    // Insert the citation below the lookup query (hard coded formatting)
-    return `${input}\n${citation}`;
+    // The citation replaces the lookup query
+    return citation;
   }
 
   /**
@@ -858,7 +828,7 @@ class JWLLinkerPlugin extends Plugin {
         new Notice(`${Lang.invalidUrl} ${input}`, Config.delay);
         return null;
       }
-      return this._pickCitation(input, view, match.docId, this._pidRange(match.parId), true);
+      return this._pickCitation(input, match.whole, view, match.docId, this._pidRange(match.parId), true);
     }
     return this._fetchLookupCitation(input, view);
   }
@@ -969,15 +939,17 @@ class JWLLinkerPlugin extends Plugin {
 
   /**
    * Open the picker for an article and build the citation from the ticked paragraphs
-   * @param {string} input selection, the citation goes below it
+   * @param {string} input selection
+   * @param {string} source the part of the selection the citation replaces
    * @param {View} view
    * @param {string} docId
    * @param {Array<number>} preselect paragraph ids to tick
    * @param {boolean} callout use the callout template
    * @param {boolean} [bodyOnly] drop headings and questions from a preselected range
+   * @param {boolean} [ask] open the picker; false inserts the preselected paragraphs as they are
    * @returns {Promise<string|null>} null = cancelled or failed (a Notice says why)
    */
-  async _pickCitation(input, view, docId, preselect, callout, bodyOnly = false) {
+  async _pickCitation(input, source, view, docId, preselect, callout, bodyOnly = false, ask = true) {
     const article = docId ? await this._getArticle(docId) : null;
     if (!article) {
       new Notice(`${Lang.onlineLookupFailed} ${Config.wolPublications}${docId}`, Config.delay);
@@ -987,12 +959,19 @@ class JWLLinkerPlugin extends Plugin {
       const par = article.paragraphs.find((p) => p.pid === pid);
       return par && (!bodyOnly || par.kind === 'body' || par.kind === 'box');
     });
-    this.loadingNotice?.hide(); // the picker is the feedback now
-    const pids = await new Promise((resolve) => {
-      new ParagraphPickerModal(this.app, article, ticked, resolve).open();
-    });
-    if (!pids) return null;
+    let pids = ticked;
+    if (ask) {
+      this.loadingNotice?.hide(); // the picker is the feedback now
+      pids = await new Promise((resolve) => {
+        new ParagraphPickerModal(this.app, article, ticked, resolve).open();
+      });
+      if (!pids) return null;
+    }
     const picked = article.paragraphs.filter((p) => pids.includes(p.pid));
+    if (picked.length === 0) {
+      new Notice(`${Lang.onlineLookupFailed} ${source}`, Config.delay);
+      return null;
+    }
     const first = picked[0].pid;
     const label = article.pubNav || article.title;
     const target = this.settings.citationLink
@@ -1000,7 +979,11 @@ class JWLLinkerPlugin extends Plugin {
       : `${Config.wolPublications}${docId}#h=${first}`;
     const link = `[${label}](${target})`;
     const content = picked.map((p) => this._boldInitialNumber(p.md));
-    const template = callout ? this.settings.pubCalloutTemplate : this.settings.pubTemplate;
+    // the markdown already carries its italics, so drop a template's *{text}* wrapper
+    const template = (callout ? this.settings.pubCalloutTemplate : this.settings.pubTemplate).replace(
+      '*{text}*',
+      '{text}',
+    );
     let text = content.join('\n\n');
     if (template[0] === '>') {
       // first line follows the template's own '> ', the rest need the prefix
@@ -1011,7 +994,8 @@ class JWLLinkerPlugin extends Plugin {
     }
     view.addToHistory(`${Config.wolPublications}${docId}#h=${first}`, link, content);
     view.showHistory();
-    return `${input}\n${template.replace('{title}', link).replace('{text}', text)}`;
+    const citation = template.replace('{title}', link).replace('{text}', text);
+    return input.replace(source, () => citation); // the citation replaces the source link or lookup
   }
 
   /**
@@ -1110,7 +1094,7 @@ class JWLLinkerPlugin extends Plugin {
   /**
    * Looks for JW web links, returns the one nearest the caret
    * Either wol.jw.org/... or jw.org/finder... style links are accepted
-   * Return the link nearest to the caret position, or null
+   * Return the link nearest to the caret position (first link if there is no caret), or null
    * @param {string} input
    * @param {number?} caret
    * @returns {TJWLink|null}
@@ -1121,7 +1105,8 @@ class JWLLinkerPlugin extends Plugin {
     for (const match of matches) {
       const begin = match.index;
       const end = begin + match[0].length;
-      if (caret >= begin && caret <= end) {
+      // an explicit selection has no caret: take the first link in it
+      if (caret === undefined || (caret >= begin && caret <= end)) {
         output = this._extractLinkParts(match);
         break;
       }
