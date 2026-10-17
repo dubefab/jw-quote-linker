@@ -17,7 +17,7 @@ const DEFAULT_SETTINGS = {
   verseTemplate: '{title}\u2002“*{text}*”', // non-breaking space
   verseCalloutTemplate: '> [!verse] BIBLE — {title}\n> {text}\n',
   pubTemplate: '{title}\n“*{text}*”',
-  pubCalloutTemplate: '> [!quote]- PUB. — {title}\n> {text}\n',
+  pubCalloutTemplate: '> [!quote]- {title}\n> {text}\n',
   historySize: 20,
   boldInitialNum: true,
   citationLink: true,
