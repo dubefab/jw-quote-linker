@@ -15,7 +15,7 @@ const {
 
 const DEFAULT_SETTINGS = {
   verseTemplate: '{title}\u2002“*{text}*”', // non-breaking space
-  verseCalloutTemplate: '> [!verse] {title}\n> {text}\n',
+  verseCalloutTemplate: '> [!quote]+ {title}\n> {text}\n',
   pubTemplate: '{title}\n“*{text}*”',
   pubCalloutTemplate: '> [!quote]- {title}\n> {text}\n',
   historySize: 20,
